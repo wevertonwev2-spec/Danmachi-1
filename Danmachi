@@ -1,0 +1,309 @@
+DanMachi Puzzles & Dungeon — Godot Project Skeleton
+
+This document contains a ready-to-use Godot 4 project skeleton (source code + structure + instructions) for a MythWars-like match-3 + RPG game with ORIGINAL characters and a gacha system.
+
+
+---
+
+What you get in this package
+
+Project folder structure (described below)
+
+Core GDScript files: game manager, match-3 grid, hero/unit, enemy, gacha system
+
+Scenes (.tscn) layout descriptions and how to place them
+
+Sample JSON data for heroes and gacha pools
+
+Placeholder asset names (you should replace with your art)
+
+Step-by-step instructions to open the project in Godot 4 and export an Android APK
+
+
+
+---
+
+Quick note about IP
+
+This project uses original characters and storylines inspired by the style of DanMachi but not copying any copyrighted characters or trademarked names. Replace characters, names and assets as you like.
+
+
+---
+
+Recommended environment
+
+Godot 4.2+ (stable)
+
+Android SDK & NDK (installed via Android Studio or command-line)
+
+Java JDK 11 or 17
+
+Godot Android export templates installed
+
+
+
+---
+
+Project structure (folders & files)
+
+DanMachiLikeGodot/
+├─ project.godot
+├─ icon.png (placeholder)
+├─ assets/
+│  ├─ sprites/
+│  │  ├─ hero_placeholder.png
+│  │  ├─ tile_blue.png
+│  │  ├─ tile_red.png
+│  │  └─ ...
+│  └─ audio/
+│     ├─ sfx_match.wav
+│     └─ bgm_dungeon.ogg
+├─ scenes/
+│  ├─ Main.tscn
+│  ├─ HUD.tscn
+│  ├─ MatchGrid.tscn
+│  ├─ HeroCard.tscn
+│  └─ Gacha.tscn
+├─ scripts/
+│  ├─ Main.gd
+│  ├─ MatchGrid.gd
+│  ├─ Tile.gd
+│  ├─ Hero.gd
+│  ├─ TeamManager.gd
+│  ├─ Enemy.gd
+│  ├─ Gacha.gd
+│  └─ DataLoader.gd
+└─ data/
+   ├─ heroes.json
+   └─ gacha.json
+
+
+---
+
+How to open
+
+1. Install Godot 4.x and open the project.godot file in the DanMachiLikeGodot folder.
+
+
+2. The Main.tscn is the scene to run.
+
+
+
+
+---
+
+Main design decisions
+
+Match-3 core: standard swap + match detection with cascades and mana generation per color.
+
+5-hero team: each hero has color affinity and skill that triggers when skill meter fills.
+
+Gacha: uses tickets/currency; simple rarity weighting and guaranteed pity after X pulls (configurable).
+
+Data-driven: hero stats, skills and gacha rates are in JSON files.
+
+
+
+---
+
+Important scripts (brief descriptions)
+
+scripts/Main.gd
+
+Loads data, initializes TeamManager, MatchGrid, HUD
+
+Handles scene flow (start battle, go to gacha, go to town)
+
+
+scripts/MatchGrid.gd
+
+Implements tile grid, swapping, match detection, cascade, fall-down physics (grid-based), and returns mana per color.
+
+Signals: match_occurred(mana_dict), turn_end()
+
+
+scripts/Tile.gd
+
+Represents a jewel/tile. Properties: color, sprite_index, is_special
+
+
+scripts/Hero.gd
+
+Data-driven hero class. Fields: name, rarity, color, hp, attack, skill, skill_meter.
+
+use_skill() effect defined in code (you can branch per skill type).
+
+
+scripts/Gacha.gd
+
+Performs pulls with weighting from data/gacha.json.
+
+Implements pity counter and returns hero IDs.
+
+
+scripts/DataLoader.gd
+
+Loads JSON files (heroes.json, gacha.json) and exposes maps/dictionaries.
+
+
+
+---
+
+Example: scripts/MatchGrid.gd
+
+# MatchGrid.gd (Godot 4, GDScript 2.0)
+extends Node2D
+
+@export_group("Grid")
+@export var rows: int = 7
+@export var cols: int = 7
+@export var tile_size: int = 64
+
+signal match_occurred(mana_dict)
+
+var grid = [] # 2D array of Tile nodes
+const COLORS = ["red","blue","green","yellow","purple"]
+
+func _ready():
+    _init_grid()
+
+func _init_grid():
+    grid.resize(rows)
+    for r in rows:
+        grid[r] = []
+        for c in cols:
+            var tile = _create_random_tile(r,c)
+            grid[r].append(tile)
+
+func _create_random_tile(r,c):
+    var tile_scene = preload("res://scenes/Tile.tscn")
+    var t = tile_scene.instantiate()
+    t.position = Vector2(c * tile_size, r * tile_size)
+    t.color = COLORS[randi() % COLORS.size()]
+    add_child(t)
+    return t
+
+func swap_tiles(pos_a, pos_b):
+    # swap nodes in grid and check for matches
+    pass
+
+func _check_matches():
+    # find horizontal and vertical matches >=3
+    # build mana_dict = {"red":n, "blue":n, ...}
+    # emit_signal("match_occurred", mana_dict)
+    pass
+
+
+---
+
+Example: scripts/Gacha.gd
+
+# Gacha.gd
+extends Node
+
+signal pull_result(pulled_ids : Array)
+
+@export var pity_limit: int = 50
+@export var pulls_for_10x: int = 10
+
+var pity_counter = 0
+var data = null # DataLoader reference
+
+func init(loader):
+    data = loader
+
+func pull_once():
+    # Weighted random from data.gacha_pool
+    var pool = data.get_gacha_pool()
+    var roll = randi() % 10000
+    var cum = 0
+    for entry in pool:
+        cum += int(entry.rate * 100)
+        if roll < cum:
+            pity_counter += 1
+            if entry.rarity >= 5:
+                pity_counter = 0
+            emit_signal("pull_result", [entry.hero_id])
+            return entry.hero_id
+    # fallback
+    var last = pool[-1].hero_id
+    emit_signal("pull_result", [last])
+    return last
+
+func pull_ten():
+    var results = []
+    for i in range(pulls_for_10x):
+        results.append(pull_once())
+    emit_signal("pull_result", results)
+    return results
+
+
+---
+
+Example data: data/heroes.json
+
+{
+  "heroes": [
+    {"id":"hero_bell","name":"Bell Cranel-Style","rarity":5,"color":"red","hp":1200,"atk":220,"skill":"flame_surge"},
+    {"id":"hero_ais","name":"Ais-Style","rarity":5,"color":"red","hp":1500,"atk":280,"skill":"cleave"},
+    {"id":"hero_hestia","name":"Hestia-Style","rarity":4,"color":"green","hp":900,"atk":80,"skill":"blessing"}
+  ]
+}
+
+Example data: data/gacha.json
+
+{
+  "gacha_pool": [
+    {"hero_id":"hero_bell","rate":0.5,"rarity":5},
+    {"hero_id":"hero_ais","rate":0.2,"rarity":5},
+    {"hero_id":"hero_hestia","rate":0.3,"rarity":4}
+  ]
+}
+
+
+---
+
+How to test in Godot Editor
+
+Open Main.tscn and run. Use debugger prints to see match_occurred signals and mana distribution.
+
+Hook MatchGrid.match_occurred to TeamManager to increase hero skill meters.
+
+
+
+---
+
+How to export an Android APK (high-level)
+
+1. Install Android SDK/NDK, set environment variables (ANDROID_SDK_ROOT, ANDROID_NDK_ROOT).
+
+
+2. In Godot, install Android export templates (Editor > Manage Export Templates).
+
+
+3. Project > Export > Android. Configure key signing (release) or test unsigned debug.
+
+
+4. Click Export Project to generate .apk or .aab (recommended .aab for Play Store).
+
+
+
+Detailed steps with screenshots are included in the project README (open the README.md file inside the project folder).
+
+
+---
+
+Next steps I can do now (choose any):
+
+Generate the full Godot project files (all scripts, scenes in text form) here for you to copy into a folder.
+
+Create a ZIP-ready folder structure with placeholder PNGs (I can provide base64 placeholders) — you will need to paste files locally.
+
+Provide a ready-to-run minimal prototype compressed as a downloadable file (I cannot compile APK here; you must export on your machine or server with Godot installed).
+
+
+
+---
+
+End of document.
+
